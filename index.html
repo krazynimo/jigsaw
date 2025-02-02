@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Interactive Puzzle Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Arial', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(to right, #003366, #004080);
+      color: white;
+      text-align: center;
+    }
+    h1 { font-size: 3vw; text-shadow: 2px 2px 10px rgba(0,0,0,0.5); }
+    .puzzle-container { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .puzzle-board {
+      width: 400px;
+      height: 400px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(4, 1fr);
+      background: rgba(255, 255, 255, 0.1);
+      border: 2px dashed white;
+      border-radius: 10px;
+      position: relative;
+    }
+    .puzzle-piece {
+      width: 100px;
+      height: 100px;
+      background-size: 400px 400px;
+      cursor: grab;
+      user-select: none;
+    }
+    .message { font-size: 1.5vw; font-weight: bold; margin-top: 10px; }
+    .btn { padding: 10px 20px; font-size: 1.5vw; background: #ff1744; border: none; border-radius: 10px; cursor: pointer; color: white; }
+    .btn:hover { background: #d500f9; }
+    .timer { font-size: 1.5vw; font-weight: bold; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Interactive Puzzle Game</h1>
+  <div class="timer" id="timer">Time: 0s</div>
+  <div class="puzzle-container">
+    <div class="puzzle-board" id="puzzleBoard"></div>
+    <div class="message" id="message"></div>
+    <button class="btn" onclick="resetPuzzle()">Reset Puzzle</button>
+    <button class="btn" onclick="nextPuzzle()">Next Puzzle</button>
+  </div>
+  
+  <script>
+    let puzzleImages = [];
+    let currentImageIndex = 0;
+    let startTime, timerInterval;
+    let correctOrder = [];
+    let shuffledOrder = [];
+
+    // Function to load images from a folder (simulated here)
+    function loadImagesFromFolder() {
+      const imageFolder = "assets/images/";
+      const imageFiles = ["image1.jpg", "image2.jpg", "image3.jpg"]; // Add more images here
+      puzzleImages = imageFiles.map(image => imageFolder + image);
+    }
+
+    function startTimer() {
+      clearInterval(timerInterval);
+      startTime = Date.now();
+      timerInterval = setInterval(() => {
+        document.getElementById("timer").innerText = `Time: ${Math.floor((Date.now() - startTime) / 1000)}s`;
+      }, 1000);
+    }
+
+    function stopTimer() {
+      clearInterval(timerInterval);
+    }
+
+    function shuffleArray(array) {
+      return array.sort(() => Math.random() - 0.5);
+    }
+
+    function createPuzzle() {
+      const puzzleBoard = document.getElementById("puzzleBoard");
+      puzzleBoard.innerHTML = "";
+      const image = puzzleImages[currentImageIndex];
+      correctOrder = [...Array(16).keys()];
+      shuffledOrder = shuffleArray([...correctOrder]);
+      
+      shuffledOrder.forEach((index, i) => {
+        const piece = document.createElement("div");
+        piece.className = "puzzle-piece";
+        piece.style.backgroundImage = `url(${image})`;
+        piece.style.backgroundPosition = `${-(index % 4) * 100}px ${-Math.floor(index / 4) * 100}px`;
+        piece.dataset.index = index;
+        piece.draggable = true;
+        
+        piece.addEventListener("dragstart", dragStart);
+        piece.addEventListener("dragover", dragOver);
+        piece.addEventListener("drop", drop);
+        
+        puzzleBoard.appendChild(piece);
+      });
+      startTimer();
+    }
+
+    let draggedItem = null;
+    function dragStart(e) {
+      draggedItem = e.target;
+    }
+    
+    function dragOver(e) {
+      e.preventDefault();
+    }
+    
+    function drop(e) {
+      if (!draggedItem || draggedItem === e.target) return;
+      let tempIndex = draggedItem.dataset.index;
+      draggedItem.dataset.index = e.target.dataset.index;
+      e.target.dataset.index = tempIndex;
+      
+      [draggedItem.style.backgroundPosition, e.target.style.backgroundPosition] = [
+        e.target.style.backgroundPosition,
+        draggedItem.style.backgroundPosition
+      ];
+      
+      checkCompletion();
+    }
+
+    function checkCompletion() {
+      let pieces = document.querySelectorAll(".puzzle-piece");
+      let isSolved = [...pieces].every((piece, i) => parseInt(piece.dataset.index) === correctOrder[i]);
+      if (isSolved) {
+        stopTimer();
+        document.getElementById("message").innerText = "Puzzle Complete! 🎉";
+      }
+    }
+
+    function resetPuzzle() {
+      createPuzzle();
+      document.getElementById("message").innerText = "";
+    }
+
+    function nextPuzzle() {
+      currentImageIndex = (currentImageIndex + 1) % puzzleImages.length;
+      resetPuzzle();
+    }
+
+    loadImagesFromFolder(); // Load the images when the page loads
+    createPuzzle();
+  </script>
+</body>
+</html>
