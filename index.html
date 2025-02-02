@@ -39,36 +39,140 @@
       background-size: 400px 400px;
       cursor: grab;
       user-select: none;
+      transition: transform 0.2s ease-in-out, opacity 0.3s ease;
+    }
+    .puzzle-piece:active {
+      transform: scale(1.1);
     }
     .message { font-size: 1.5vw; font-weight: bold; margin-top: 10px; }
-    .btn { padding: 10px 20px; font-size: 1.5vw; background: #ff1744; border: none; border-radius: 10px; cursor: pointer; color: white; }
+    .btn {
+      padding: 8px 16px;
+      font-size: 1.2vw;
+      background: #ff1744;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      color: white;
+      transition: background 0.3s ease;
+    }
     .btn:hover { background: #d500f9; }
+    .btn:disabled {
+      background: #666;
+      cursor: not-allowed;
+    }
     .timer { font-size: 1.5vw; font-weight: bold; margin-bottom: 10px; }
+    .loading { font-size: 1.5vw; font-weight: bold; margin-top: 10px; display: none; }
+    .button-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 10px;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 100;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background: #003366;
+      padding: 20px;
+      border-radius: 10px;
+      width: 50%;
+      max-width: 500px;
+      text-align: center;
+      position: relative;
+    }
+    .close {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      font-size: 24px;
+      cursor: pointer;
+    }
+    @media (max-width: 768px) {
+      h1 { font-size: 5vw; }
+      .btn { font-size: 2.5vw; padding: 6px 12px; }
+      .timer, .message, .loading { font-size: 3vw; }
+      .puzzle-board {
+        width: 300px;
+        height: 300px;
+      }
+      .puzzle-piece {
+        width: 75px;
+        height: 75px;
+        background-size: 300px 300px;
+      }
+    }
   </style>
 </head>
 <body>
   <h1>Interactive Puzzle Game</h1>
   <div class="timer" id="timer">Time: 0s</div>
   <div class="puzzle-container">
+    <select id="difficulty" onchange="changeDifficulty()">
+      <option value="3">3x3 (Easy)</option>
+      <option value="4" selected>4x4 (Medium)</option>
+      <option value="5">5x5 (Hard)</option>
+    </select>
     <div class="puzzle-board" id="puzzleBoard"></div>
+    <div class="loading" id="loading">Loading Puzzle...</div>
     <div class="message" id="message"></div>
-    <button class="btn" onclick="resetPuzzle()">Reset Puzzle</button>
-    <button class="btn" onclick="nextPuzzle()">Next Puzzle</button>
+    <div class="button-container">
+      <button class="btn" onclick="resetPuzzle()">Reset Puzzle</button>
+      <button class="btn" onclick="shufflePuzzle()">Shuffle Puzzle</button>
+      <button class="btn" onclick="undoMove()">Undo</button>
+      <button class="btn" onclick="showHint()">Show Hint</button>
+      <button class="btn" onclick="nextPuzzle()">Next Puzzle</button>
+      <button class="btn" onclick="openModal()">How to Play</button>
+    </div>
   </div>
-  
+
+  <!-- How to Play Modal -->
+  <div id="howToPlayModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal()">&times;</span>
+      <h2>How to Play</h2>
+      <p>Drag and drop the pieces to complete the puzzle. Use the buttons to shuffle, reset, or get a hint.</p>
+    </div>
+  </div>
+
+  <!-- Thank You Modal -->
+  <div id="thankYouModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal()">&times;</span>
+      <h2>Thank You!</h2>
+      <p>You've completed all the puzzles. Great job! 🎉</p>
+    </div>
+  </div>
+
+  <!-- Sound Effects -->
+  <audio id="moveSound" src="assets/sounds/move.mp3"></audio>
+  <audio id="completeSound" src="assets/sounds/complete.mp3"></audio>
+  <audio id="shuffleSound" src="assets/sounds/shuffle.mp3"></audio>
+  <audio id="hintSound" src="assets/sounds/hint.mp3"></audio>
+  <audio id="undoSound" src="assets/sounds/undo.mp3"></audio>
+
+  <!-- Confetti Library -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
   <script>
-    let puzzleImages = [];
     let currentImageIndex = 0;
+    const totalImages = 50; // Total number of images available
+    const imageFolder = "assets/images/"; // Folder containing the images
     let startTime, timerInterval;
     let correctOrder = [];
     let shuffledOrder = [];
-
-    // Function to load images from a folder (simulated here)
-    function loadImagesFromFolder() {
-      const imageFolder = "assets/images/";
-      const imageFiles = ["image1.jpg", "image2.jpg", "image3.jpg"]; // Add more images here
-      puzzleImages = imageFiles.map(image => imageFolder + image);
-    }
+    let gridSize = 4; // Default grid size
+    let moveHistory = []; // Store move history for undo functionality
+    let completedPuzzles = 0; // Track completed puzzles
 
     function startTimer() {
       clearInterval(timerInterval);
@@ -86,50 +190,95 @@
       return array.sort(() => Math.random() - 0.5);
     }
 
+    function isSolvable(shuffledArray, gridSize) {
+      let inversions = 0;
+      for (let i = 0; i < shuffledArray.length; i++) {
+        for (let j = i + 1; j < shuffledArray.length; j++) {
+          if (shuffledArray[i] > shuffledArray[j]) inversions++;
+        }
+      }
+      if (gridSize % 2 === 1) return inversions % 2 === 0;
+      const blankRow = Math.floor(shuffledArray.indexOf(0) / gridSize);
+      return (inversions + blankRow) % 2 === 1;
+    }
+
     function createPuzzle() {
       const puzzleBoard = document.getElementById("puzzleBoard");
+      const loading = document.getElementById("loading");
+      const buttons = document.querySelectorAll(".btn");
       puzzleBoard.innerHTML = "";
-      const image = puzzleImages[currentImageIndex];
-      correctOrder = [...Array(16).keys()];
-      shuffledOrder = shuffleArray([...correctOrder]);
-      
-      shuffledOrder.forEach((index, i) => {
-        const piece = document.createElement("div");
-        piece.className = "puzzle-piece";
-        piece.style.backgroundImage = `url(${image})`;
-        piece.style.backgroundPosition = `${-(index % 4) * 100}px ${-Math.floor(index / 4) * 100}px`;
-        piece.dataset.index = index;
-        piece.draggable = true;
-        
-        piece.addEventListener("dragstart", dragStart);
-        piece.addEventListener("dragover", dragOver);
-        piece.addEventListener("drop", drop);
-        
-        puzzleBoard.appendChild(piece);
-      });
-      startTimer();
+      loading.style.display = "block"; // Show loading message
+      buttons.forEach(button => button.disabled = true); // Disable buttons during loading
+
+      const image = new Image();
+      image.src = `${imageFolder}image${currentImageIndex + 1}.jpg`;
+      image.onerror = () => {
+        // If no more images are available
+        loading.style.display = "none";
+        document.getElementById("thankYouModal").style.display = "flex";
+        buttons.forEach(button => button.disabled = true); // Disable all buttons
+      };
+      image.onload = () => {
+        loading.style.display = "none"; // Hide loading message
+        buttons.forEach(button => button.disabled = false); // Re-enable buttons
+        correctOrder = [...Array(gridSize * gridSize).keys()];
+        shuffledOrder = shuffleArray([...correctOrder]);
+
+        puzzleBoard.style.width = `${gridSize * 100}px`;
+        puzzleBoard.style.height = `${gridSize * 100}px`;
+        puzzleBoard.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
+        puzzleBoard.style.gridTemplateRows = `repeat(${gridSize}, 1fr)`;
+
+        shuffledOrder.forEach((index, i) => {
+          const piece = document.createElement("div");
+          piece.className = "puzzle-piece";
+          piece.style.width = `${100}px`;
+          piece.style.height = `${100}px`;
+          piece.style.backgroundImage = `url(${image.src})`;
+          piece.style.backgroundSize = `${gridSize * 100}px ${gridSize * 100}px`;
+          piece.style.backgroundPosition = `${-(index % gridSize) * 100}px ${-Math.floor(index / gridSize) * 100}px`;
+          piece.dataset.index = index;
+          piece.draggable = true;
+
+          piece.addEventListener("dragstart", dragStart);
+          piece.addEventListener("dragover", dragOver);
+          piece.addEventListener("drop", drop);
+          addTouchEvents(piece);
+
+          puzzleBoard.appendChild(piece);
+        });
+        startTimer();
+      };
+    }
+
+    function changeDifficulty() {
+      gridSize = parseInt(document.getElementById("difficulty").value);
+      createPuzzle();
     }
 
     let draggedItem = null;
     function dragStart(e) {
       draggedItem = e.target;
     }
-    
+
     function dragOver(e) {
       e.preventDefault();
     }
-    
+
     function drop(e) {
       if (!draggedItem || draggedItem === e.target) return;
+      moveHistory.push({ from: draggedItem.dataset.index, to: e.target.dataset.index });
+
       let tempIndex = draggedItem.dataset.index;
       draggedItem.dataset.index = e.target.dataset.index;
       e.target.dataset.index = tempIndex;
-      
+
       [draggedItem.style.backgroundPosition, e.target.style.backgroundPosition] = [
         e.target.style.backgroundPosition,
         draggedItem.style.backgroundPosition
       ];
-      
+
+      document.getElementById("moveSound").play(); // Play move sound
       checkCompletion();
     }
 
@@ -138,7 +287,31 @@
       let isSolved = [...pieces].every((piece, i) => parseInt(piece.dataset.index) === correctOrder[i]);
       if (isSolved) {
         stopTimer();
-        document.getElementById("message").innerText = "Puzzle Complete! 🎉";
+        const timeTaken = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById("message").innerText = `Puzzle Complete! 🎉 Time: ${timeTaken}s`;
+
+        // Save best time
+        const bestTimeKey = `bestTime-${currentImageIndex}`;
+        const bestTime = localStorage.getItem(bestTimeKey) || Infinity;
+        if (timeTaken < bestTime) {
+          localStorage.setItem(bestTimeKey, timeTaken);
+          document.getElementById("message").innerText += ` (New Best Time!)`;
+        } else {
+          document.getElementById("message").innerText += ` (Best Time: ${bestTime}s)`;
+        }
+
+        // Confetti animation
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+        document.getElementById("completeSound").play(); // Play completion sound
+
+        completedPuzzles++;
+        if (completedPuzzles === totalImages) {
+          document.getElementById("thankYouModal").style.display = "flex";
+        }
       }
     }
 
@@ -147,13 +320,103 @@
       document.getElementById("message").innerText = "";
     }
 
+    function shufflePuzzle() {
+      let shuffledIndices;
+      do {
+        shuffledIndices = shuffleArray([...Array(gridSize * gridSize).keys()]);
+      } while (!isSolvable(shuffledIndices, gridSize));
+
+      const pieces = document.querySelectorAll(".puzzle-piece");
+      pieces.forEach((piece, i) => {
+        piece.dataset.index = shuffledIndices[i];
+        piece.style.backgroundPosition = `${-(shuffledIndices[i] % gridSize) * 100}px ${-Math.floor(shuffledIndices[i] / gridSize) * 100}px`;
+      });
+
+      document.getElementById("shuffleSound").play(); // Play shuffle sound
+      document.getElementById("message").innerText = "";
+    }
+
+    function undoMove() {
+      if (moveHistory.length === 0) return;
+      const lastMove = moveHistory.pop();
+      const pieces = document.querySelectorAll(".puzzle-piece");
+      const fromPiece = [...pieces].find(piece => piece.dataset.index === lastMove.from);
+      const toPiece = [...pieces].find(piece => piece.dataset.index === lastMove.to);
+
+      let tempIndex = fromPiece.dataset.index;
+      fromPiece.dataset.index = toPiece.dataset.index;
+      toPiece.dataset.index = tempIndex;
+
+      [fromPiece.style.backgroundPosition, toPiece.style.backgroundPosition] = [
+        toPiece.style.backgroundPosition,
+        fromPiece.style.backgroundPosition
+      ];
+
+      document.getElementById("undoSound").play(); // Play undo sound
+    }
+
+    function showHint() {
+      const puzzleBoard = document.getElementById("puzzleBoard");
+      const hintOverlay = document.createElement("div");
+      hintOverlay.style.position = "absolute";
+      hintOverlay.style.width = `${gridSize * 100}px`;
+      hintOverlay.style.height = `${gridSize * 100}px`;
+      hintOverlay.style.backgroundImage = `url(${imageFolder}image${currentImageIndex + 1}.jpg)`;
+      hintOverlay.style.backgroundSize = "cover";
+      hintOverlay.style.opacity = "0.7";
+      hintOverlay.style.zIndex = "10";
+      puzzleBoard.appendChild(hintOverlay);
+
+      document.getElementById("hintSound").play(); // Play hint sound
+
+      setTimeout(() => {
+        puzzleBoard.removeChild(hintOverlay);
+      }, 2000); // Show hint for 2 seconds
+    }
+
     function nextPuzzle() {
-      currentImageIndex = (currentImageIndex + 1) % puzzleImages.length;
+      currentImageIndex = (currentImageIndex + 1) % totalImages; // Loop through images
       resetPuzzle();
     }
 
-    loadImagesFromFolder(); // Load the images when the page loads
-    createPuzzle();
+    function openModal() {
+      document.getElementById("howToPlayModal").style.display = "flex";
+    }
+
+    function closeModal() {
+      document.getElementById("howToPlayModal").style.display = "none";
+      document.getElementById("thankYouModal").style.display = "none";
+    }
+
+    function addTouchEvents(piece) {
+      piece.addEventListener("touchstart", touchStart);
+      piece.addEventListener("touchmove", touchMove);
+      piece.addEventListener("touchend", touchEnd);
+    }
+
+    let touchStartX, touchStartY;
+    function touchStart(e) {
+      draggedItem = e.target;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }
+
+    function touchMove(e) {
+      e.preventDefault();
+    }
+
+    function touchEnd(e) {
+      if (!draggedItem) return;
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      const target = document.elementFromPoint(touchEndX, touchEndY);
+
+      if (target && target.classList.contains("puzzle-piece")) {
+        drop({ target });
+      }
+    }
+
+    createPuzzle(); // Initialize the first puzzle
   </script>
 </body>
 </html>
